@@ -6,4 +6,5 @@
 - implementaion is very hard
 - working of web server arpit bhayani
 - Storing Files in Chess Games for Free Cloud Storage" explores a method of embedding data within chess games to utilize online chess platforms as unconventional cloud storage. By converting files into sequences of chess moves, users can upload these games to platforms like Lichess or Chess.com, effectively storing data within the game's move history. This creative approach leverages the widespread availability and storage capabilities of online chess databases for data storage purposes.
--hello
+- build your own shell in c
+- simple word dictionary not  an http api but simple crud operation
