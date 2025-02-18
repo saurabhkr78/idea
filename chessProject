@@ -1,0 +1,99 @@
+import chess
+import chess.pgn
+from bitarray import bitarray
+import sys
+
+def encode_data_to_pgn(input_file, output_pgn):
+    # Read the input file
+    with open(input_file, 'rb') as f:
+        data = f.read()
+    
+    # Prepend the data length (32 bits) to the bitstream
+    data_len = len(data) * 8
+    bit_stream = bitarray()
+    bit_stream.frombytes(data_len.to_bytes(4, byteorder='big'))
+    bit_stream.frombytes(data)
+    
+    game = chess.pgn.Game()
+    game.headers["Event"] = "Encoded Chess Game"
+    board = game.board()
+    node = game
+    
+    idx = 0
+    while idx < len(bit_stream):
+        moves = list(board.legal_moves)
+        if not moves:
+            break  # End the game if no moves left
+        
+        # Sort moves deterministically (UCI string)
+        moves.sort(key=lambda m: m.uci())
+        n = len(moves)
+        if n == 0:
+            break
+        
+        k = (n-1).bit_length()  # ceil(log2(n))
+        # Read k bits, pad with 0 if necessary
+        bits_needed = k
+        if idx + bits_needed > len(bit_stream):
+            # Pad with zeros
+            needed = bit_stream[idx:] + bitarray('0' * (bits_needed - (len(bit_stream) - idx)))
+        else:
+            needed = bit_stream[idx:idx+bits_needed]
+        idx += bits_needed
+        
+        m = int(needed.to01(), 2) % n
+        move = moves[m]
+        node = node.add_variation(move)
+        board.push(move)
+    
+    with open(output_pgn, 'w') as pgn_file:
+        pgn_file.write(str(game))
+    
+    return
+
+def decode_pgn_to_data(input_pgn, output_file):
+    pgn = open(input_pgn)
+    game = chess.pgn.read_game(pgn)
+    bit_stream = bitarray()
+    
+    board = chess.Board()
+    for move in game.mainline_moves():
+        moves = list(board.legal_moves)
+        moves.sort(key=lambda m: m.uci())
+        n = len(moves)
+        if n == 0:
+            break
+        
+        # Find the index of the move
+        m = moves.index(move)
+        k = (n-1).bit_length()
+        # Append m as k bits
+        bit_stream.extend(f"{m:0{k}b}")
+        board.push(move)
+    
+    # Extract data length (first 32 bits)
+    if len(bit_stream) < 32:
+        raise ValueError("Invalid bitstream")
+    data_len_bits = bit_stream[:32]
+    data_len = int(data_len_bits.to01(), 2)
+    
+    # Truncate to data_len + 32 (data_len bits)
+    remaining_bits = bit_stream[32:32 + data_len]
+    if len(remaining_bits) < data_len:
+        raise ValueError("Insufficient bits to recover data")
+    
+    # Convert to bytes
+    data_bytes = remaining_bits.tobytes()
+    # Truncate to exact length
+    cut = len(remaining_bits) % 8
+    if cut:
+        data_bytes = data_bytes[:-1] + (bytes([data_bytes[-1] & (0xff << (8 - cut))]) if data_bytes else b''
+    
+    with open(output_file, 'wb') as f:
+        f.write(data_bytes)
+    
+    return
+
+# Example usage:
+# encode_data_to_pgn('input.bin', 'output.pgn')
+# decode_pgn_to_data('output.pgn', 'decoded.bin')
